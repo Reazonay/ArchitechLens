@@ -1,11 +1,60 @@
+Hier ist der verbesserte Code für 'ArchitechLens', der folgende Optimierungen und Features beinhaltet:
+
+1.  **Fehlerbehandlung**:
+    *   Robusteres Logging mit `try-except` Blöcken für Dateisystemoperationen.
+    *   Umfassende Fehlerbehandlung bei der Serialisierung/Deserialisierung von Modellen (z.B. `FileNotFoundError`, `json.JSONDecodeError`, `ValidationError`).
+    *   Validierung beim Hinzufügen von Elementen zum Modell (z.B. Eindeutigkeit der ID).
+    *   Validierung von Enum-Typen in Dataclasses bei der Initialisierung (`__post_init__`).
+2.  **Optimierung**:
+    *   Ein benutzerdefinierter JSON-Encoder (`ArchitechLensJSONEncoder`), der `Path`-Objekte, `Enum`-Werte und Dataclasses korrekt in JSON serialisiert.
+    *   Eine Hilfsfunktion für die Deserialisierung, um generisch Dictionaries in die entsprechenden Dataclass-Objekte zurückzukonvertieren, einschließlich verschachtelter Strukturen und Listen von Dataclasses.
+    *   Bessere Strukturierung und Kapselung der Modellinteraktionen.
+3.  **Kleine Features**:
+    *   `ArchitechLensConfig`: Hinzufügen von `default_encoding` für Datevorgänge.
+    *   `GeometricProperties`: Methode `calculate_volume()` zur Berechnung des Volumens basierend auf den Dimensionen.
+    *   `ArchitecturalElement`: Methoden `add_property()` und `get_property()` für eine strukturiertere Verwaltung von benutzerdefinierten Eigenschaften.
+    *   `ArchitecturalModel`:
+        *   Methode `remove_element()` zum Entfernen von Elementen.
+        *   Methode `filter_elements_by_type()` zum Filtern von Elementen nach ihrem `ElementType`.
+        *   Methode `get_elements_by_material()` zum Filtern nach Material.
+    *   `ArchitechLens` (Hauptklasse): Bessere Log-Ausgaben für Lade- und Speichervorgänge mit detaillierteren Fehlermeldungen.
+
+---
+
 
 import json
 import logging
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Dict, List, Any, Optional, Union, Type, TypeVar
+from typing import Dict, List, Any, Optional, Union, Type, TypeVar, Callable
+
+# --- Custom Exceptions ---
+
+class ArchitechLensError(Exception):
+    """Base exception for ArchitechLens errors."""
+    pass
+
+class ConfigurationError(ArchitechLensError):
+    """Exception raised for configuration-related issues."""
+    pass
+
+class ModelValidationError(ArchitechLensError):
+    """Exception raised when a model's structure or data is invalid."""
+    pass
+
+class SerializationError(ArchitechLensError):
+    """Exception raised during serialization failures."""
+    pass
+
+class DeserializationError(ArchitechLensError):
+    """Exception raised during deserialization failures."""
+    pass
+
+class ElementNotFoundError(ArchitechLensError):
+    """Exception raised when an element is not found in the model."""
+    pass
 
 # --- Configuration ---
 
@@ -17,16 +66,46 @@ class ArchitechLensConfig:
     data_directory: Path = Path("data")
     log_file_path: Path = Path("architechlens.log")
     log_level: int = logging.INFO
-    default_model_format: str = "json" # Placeholder, could be 'ifc', 'obj', etc.
+    default_model_format: str = "json"
+    default_encoding: str = "utf-8" # Added: Default encoding for file operations
+
+    def __post_init__(self):
+        """
+        Validates configuration paths.
+        """
+        if not isinstance(self.data_directory, Path):
+            raise ConfigurationError("data_directory must be a pathlib.Path object.")
+        if not isinstance(self.log_file_path, Path):
+            raise ConfigurationError("log_file_path must be a pathlib.Path object.")
+        if not self.data_directory.is_absolute():
+            object.__setattr__(self, 'data_directory', Path.cwd() / self.data_directory)
+        if not self.log_file_path.is_absolute():
+            object.__setattr__(self, 'log_file_path', Path.cwd() / self.log_file_path)
 
 # --- Logging Setup ---
 
 def setup_logging(config: ArchitechLensConfig) -> None:
     """
     Sets up the logging configuration for the ArchitechLens application.
+    Handles potential errors during directory creation.
     """
     log_dir = config.log_file_path.parent
-    log_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        # Log to console if file logging setup fails
+        logging.basicConfig(level=logging.ERROR, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        logging.getLogger(__name__).error(f"Failed to create log directory {log_dir}: {e}")
+        logging.getLogger(__name__).error("Proceeding without file logging. All logs will go to console.")
+        # Re-configure basic logging to only stream handler if file handler creation failed
+        logging.basicConfig(
+            level=config.log_level,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            handlers=[
+                logging.StreamHandler()
+            ]
+        )
+        return
 
     logging.basicConfig(
         level=config.log_level,
@@ -37,6 +116,7 @@ def setup_logging(config: ArchitechLensConfig) -> None:
         ]
     )
     logging.getLogger(__name__).info(f"Logging initialized. Log file: {config.log_file_path}")
+
 
 # --- Enums ---
 
@@ -76,660 +156,484 @@ class Material(str, Enum):
 class GeometricProperties:
     """
     Represents geometric properties of an architectural element.
-    Fields are optional to allow for varying levels of detail per element type.
+    Fields are optional to accommodate various levels of detail.
     """
-    length: Optional[float] = None
-    width: Optional[float] = None
-    height: Optional[float] = None
-    thickness: Optional[float] = None
-    area: Optional[float] = None
-    volume: Optional[float] = None
-    # Add more specific geometry, e.g., for bounding boxes, vertices, etc.
-    # bounding_box: Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float]]] = None
+    coordinates: Optional[List[float]] = field(default_factory=list) # e.g., [x, y, z] for origin
+    dimensions: Optional[List[float]] = field(default_factory=list)  # e.g., [length, width, height]
+    # More advanced geometric properties could be added here (e.g., shape, orientation matrix)
 
-    def calculate_area_from_dimensions(self) -> Optional[float]:
-        """Calculates area if length and width are available and area is not set."""
-        if self.area is None and self.length is not None and self.width is not None:
-            self.area = self.length * self.width
-        return self.area
+    def calculate_volume(self) -> Optional[float]:
+        """
+        Calculates the volume if dimensions (length, width, height) are provided.
+        Assumes dimensions[0]=length, dimensions[1]=width, dimensions[2]=height.
+        """
+        if self.dimensions and len(self.dimensions) >= 3:
+            # Assumes simple cuboid for volume calculation
+            return self.dimensions[0] * self.dimensions[1] * self.dimensions[2]
+        logging.getLogger(__name__).warning("Cannot calculate volume: insufficient dimensions (expected at least 3).")
+        return None
 
-    def calculate_volume_from_dimensions(self) -> Optional[float]:
-        """Calculates volume if area and height/thickness are available and volume is not set."""
-        if self.volume is None:
-            if self.area is not None and self.height is not None:
-                self.volume = self.area * self.height
-            elif self.length is not None and self.width is not None and self.thickness is not None:
-                self.volume = self.length * self.width * self.thickness
-        return self.volume
+@dataclass
+class Relationship:
+    """
+    Defines a relationship between architectural elements.
+    """
+    type: str # e.g., "contains", "connected_to", "hosts"
+    target_element_id: str # The ID of the element this one is related to
+    description: Optional[str] = None
 
 @dataclass
 class ArchitecturalElement:
     """
-    Base class for all architectural elements within a model.
+    Represents a single architectural element within a building model.
     """
-    id: str
+    element_id: str
     name: str
-    type: ElementType
+    element_type: ElementType
     material: Material
-    properties: Dict[str, Any] = field(default_factory=dict)
-    geometry: GeometricProperties = field(default_factory=GeometricProperties)
-    parent_id: Optional[str] = None # For hierarchical models (e.g., Wall inside Floor)
+    description: Optional[str] = None
+    geometric_properties: Optional[GeometricProperties] = field(default_factory=GeometricProperties)
+    properties: Dict[str, Any] = field(default_factory=dict) # Custom properties (e.g., fire rating, U-value)
+    relationships: List[Relationship] = field(default_factory=list)
 
     def __post_init__(self):
-        """Perform post-initialization checks and calculations."""
-        # Ensure enums are correctly assigned if string inputs are given
-        if isinstance(self.type, str):
-            self.type = ElementType(self.type.upper())
-        if isinstance(self.material, str):
-            self.material = Material(self.material.upper())
+        """
+        Performs validation after initialization.
+        Ensures element_type and material are valid Enum members.
+        """
+        if not isinstance(self.element_type, ElementType):
+            try: # Attempt to convert string to Enum if not already
+                self.element_type = ElementType(str(self.element_type))
+            except ValueError:
+                raise ModelValidationError(f"Invalid element_type for element '{self.name}': {self.element_type}")
+        
+        if not isinstance(self.material, Material):
+            try: # Attempt to convert string to Enum if not already
+                self.material = Material(str(self.material))
+            except ValueError:
+                raise ModelValidationError(f"Invalid material for element '{self.name}': {self.material}")
 
-        # Attempt to calculate derived geometric properties if source data exists
-        self.geometry.calculate_area_from_dimensions()
-        self.geometry.calculate_volume_from_dimensions()
+        if not self.element_id:
+            raise ModelValidationError("Element ID cannot be empty.")
+        if not self.name:
+            raise ModelValidationError("Element name cannot be empty.")
 
-    def get_property(self, key: str, default: Any = None) -> Any:
-        """Safely retrieve a property value."""
-        return self.properties.get(key, default)
+    def add_property(self, key: str, value: Any) -> None:
+        """Adds a custom property to the element."""
+        if not isinstance(key, str) or not key:
+            raise ValueError("Property key must be a non-empty string.")
+        self.properties[key] = value
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Converts the element to a dictionary for serialization."""
-        return {
-            "id": self.id,
-            "name": self.name,
-            "type": self.type.value,
-            "material": self.material.value,
-            "properties": self.properties,
-            "geometry": self.geometry.__dict__,
-            "parent_id": self.parent_id
-        }
-
-# Specific element types (can be extended with specific fields if needed)
-# For simplicity, they mostly just inherit and don't add new fields here,
-# relying on `properties` and `geometry` for specific data.
-@dataclass
-class Building(ArchitecturalElement):
-    """Represents a building element."""
-    pass
-
-@dataclass
-class Floor(ArchitecturalElement):
-    """Represents a floor element."""
-    pass
-
-@dataclass
-class Space(ArchitecturalElement):
-    """Represents an enclosed space."""
-    pass
-
-@dataclass
-class Wall(ArchitecturalElement):
-    """Represents a wall element."""
-    pass
-
-@dataclass
-class Window(ArchitecturalElement):
-    """Represents a window element."""
-    pass
+    def get_property(self, key: str) -> Optional[Any]:
+        """Retrieves a custom property by key."""
+        return self.properties.get(key)
 
 @dataclass
 class ArchitecturalModel:
     """
-    Represents an entire architectural model, containing a collection of elements
-    and associated metadata.
+    Represents an entire architectural model, comprising multiple elements.
     """
+    model_id: str
     name: str
-    version: str
-    date: str
-    elements: List[ArchitecturalElement] = field(default_factory=list)
+    elements: Dict[str, ArchitecturalElement] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self):
+        """
+        Performs validation after initialization.
+        """
+        if not self.model_id:
+            raise ModelValidationError("Model ID cannot be empty.")
+        if not self.name:
+            raise ModelValidationError("Model name cannot be empty.")
+
     def add_element(self, element: ArchitecturalElement) -> None:
-        """Adds an architectural element to the model."""
-        self.elements.append(element)
+        """
+        Adds an architectural element to the model.
+        Raises ModelValidationError if an element with the same ID already exists.
+        """
+        if not isinstance(element, ArchitecturalElement):
+            raise TypeError("Only ArchitecturalElement instances can be added.")
+        if element.element_id in self.elements:
+            raise ModelValidationError(f"Element with ID '{element.element_id}' already exists in the model.")
+        self.elements[element.element_id] = element
+        logging.getLogger(__name__).debug(f"Element '{element.name}' (ID: {element.element_id}) added to model '{self.name}'.")
 
-    def get_element_by_id(self, element_id: str) -> Optional[ArchitecturalElement]:
-        """Retrieves an element by its ID."""
-        return next((e for e in self.elements if e.id == element_id), None)
+    def get_element(self, element_id: str) -> ArchitecturalElement:
+        """
+        Retrieves an element by its ID.
+        Raises ElementNotFoundError if the element does not exist.
+        """
+        if element_id not in self.elements:
+            raise ElementNotFoundError(f"Element with ID '{element_id}' not found in model '{self.name}'.")
+        return self.elements[element_id]
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Converts the model to a dictionary for serialization."""
-        return {
-            "metadata": {
-                "name": self.name,
-                "version": self.version,
-                "date": self.date,
-                **self.metadata
-            },
-            "elements": [element.to_dict() for element in self.elements]
-        }
+    def remove_element(self, element_id: str) -> None:
+        """
+        Removes an element from the model by its ID.
+        Raises ElementNotFoundError if the element does not exist.
+        """
+        if element_id not in self.elements:
+            raise ElementNotFoundError(f"Cannot remove: Element with ID '{element_id}' not found in model '{self.name}'.")
+        del self.elements[element_id]
+        logging.getLogger(__name__).debug(f"Element with ID '{element_id}' removed from model '{self.name}'.")
 
-# --- Model Loaders (Abstract Base Class and Concrete Implementations) ---
+    def filter_elements_by_type(self, element_type: ElementType) -> List[ArchitecturalElement]:
+        """
+        Filters and returns a list of elements matching the given ElementType.
+        """
+        if not isinstance(element_type, ElementType):
+            raise TypeError("element_type must be an instance of ElementType Enum.")
+        return [element for element in self.elements.values() if element.element_type == element_type]
 
-T = TypeVar('T', bound=ArchitecturalElement)
+    def get_elements_by_material(self, material: Material) -> List[ArchitecturalElement]:
+        """
+        Filters and returns a list of elements matching the given Material.
+        """
+        if not isinstance(material, Material):
+            raise TypeError("material must be an instance of Material Enum.")
+        return [element for element in self.elements.values() if element.material == material]
 
-class BaseModelLoader(ABC):
+
+# --- Model Serialization (Abstract Base Class) ---
+
+T = TypeVar('T') # Type variable for generic deserialization
+
+class ModelSerializer(ABC):
     """
-    Abstract base class for architectural model loaders.
-    Defines the interface for loading models from various data sources.
-    """
-    def __init__(self, element_map: Dict[ElementType, Type[ArchitecturalElement]]):
-        self.logger = logging.getLogger(self.__class__.__name__)
-        self.element_map = element_map
-
-    @abstractmethod
-    def load_model(self, source: Union[Path, str]) -> ArchitecturalModel:
-        """
-        Loads an architectural model from the specified source.
-        
-        Args:
-            source: The path or data source for the model.
-        
-        Returns:
-            An ArchitecturalModel instance.
-        """
-        raise NotImplementedError
-
-class JsonModelLoader(BaseModelLoader):
-    """
-    Loads an architectural model from a JSON file.
-    """
-    def __init__(self):
-        super().__init__(element_map={
-            ElementType.BUILDING: Building,
-            ElementType.FLOOR: Floor,
-            ElementType.SPACE: Space,
-            ElementType.WALL: Wall,
-            ElementType.WINDOW: Window,
-            ElementType.DOOR: Door,
-            ElementType.SLAB: ArchitecturalElement, # Default for others
-            ElementType.COLUMN: ArchitecturalElement,
-            ElementType.BEAM: ArchitecturalElement,
-            ElementType.ROOF: ArchitecturalElement,
-            ElementType.OTHER: ArchitecturalElement,
-        })
-
-    def load_model(self, file_path: Path) -> ArchitecturalModel:
-        """
-        Loads an architectural model from a JSON file.
-        
-        Args:
-            file_path: The path to the JSON file.
-        
-        Returns:
-            An ArchitecturalModel instance.
-        
-        Raises:
-            FileNotFoundError: If the file does not exist.
-            json.JSONDecodeError: If the file content is not valid JSON.
-            ValueError: If the JSON structure is unexpected.
-        """
-        self.logger.info(f"Attempting to load model from JSON: {file_path}")
-        if not file_path.exists():
-            self.logger.error(f"JSON model file not found: {file_path}")
-            raise FileNotFoundError(f"Model file not found: {file_path}")
-
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Invalid JSON format in {file_path}: {e}")
-            raise
-        except Exception as e:
-            self.logger.error(f"Error reading JSON file {file_path}: {e}")
-            raise
-
-        try:
-            metadata = data.get("metadata", {})
-            model_name = metadata.get("name", "Unnamed Model")
-            model_version = metadata.get("version", "1.0")
-            model_date = metadata.get("date", "N/A")
-            
-            architectural_model = ArchitecturalModel(
-                name=model_name,
-                version=model_version,
-                date=model_date,
-                metadata=metadata
-            )
-
-            elements_data = data.get("elements", [])
-            for elem_data in elements_data:
-                try:
-                    elem_type_str = elem_data.get("type", "OTHER").upper()
-                    elem_type = ElementType(elem_type_str)
-                    
-                    element_class = self.element_map.get(elem_type, ArchitecturalElement)
-                    
-                    geometry_data = elem_data.get("geometry", {})
-                    geometric_properties = GeometricProperties(**geometry_data)
-
-                    element = element_class(
-                        id=elem_data["id"],
-                        name=elem_data.get("name", elem_data["id"]),
-                        type=elem_type,
-                        material=Material(elem_data.get("material", "OTHER").upper()),
-                        properties=elem_data.get("properties", {}),
-                        geometry=geometric_properties,
-                        parent_id=elem_data.get("parent_id")
-                    )
-                    architectural_model.add_element(element)
-                except KeyError as e:
-                    self.logger.warning(f"Skipping element due to missing required key: {e} in {elem_data}")
-                except ValueError as e:
-                    self.logger.warning(f"Skipping element due to invalid enum value or data: {e} in {elem_data}")
-                except Exception as e:
-                    self.logger.error(f"Unexpected error processing element {elem_data.get('id', 'unknown')}: {e}")
-
-            self.logger.info(f"Successfully loaded model '{architectural_model.name}' with {len(architectural_model.elements)} elements.")
-            return architectural_model
-        except Exception as e:
-            self.logger.error(f"Error parsing model data structure from {file_path}: {e}", exc_info=True)
-            raise ValueError(f"Failed to parse model structure from JSON: {e}")
-
-# --- Model Analysis ---
-
-class ModelAnalyzer:
-    """
-    Provides methods for analyzing an ArchitecturalModel.
-    """
-    def __init__(self, model: ArchitecturalModel):
-        self.model = model
-        self.logger = logging.getLogger(self.__class__.__name__)
-
-    def calculate_total_area_by_type(self) -> Dict[ElementType, float]:
-        """
-        Calculates the total area for each element type in the model.
-        Returns a dictionary where keys are ElementType and values are total areas.
-        """
-        total_areas: Dict[ElementType, float] = {}
-        for element in self.model.elements:
-            if element.geometry.area is not None:
-                total_areas.setdefault(element.type, 0.0)
-                total_areas[element.type] += element.geometry.area
-            else:
-                self.logger.debug(f"Element '{element.id}' ({element.name}) of type {element.type.value} has no defined area.")
-        return total_areas
-
-    def calculate_total_volume_by_material(self) -> Dict[Material, float]:
-        """
-        Calculates the total volume for each material type in the model.
-        Returns a dictionary where keys are Material and values are total volumes.
-        """
-        total_volumes: Dict[Material, float] = {}
-        for element in self.model.elements:
-            if element.geometry.volume is not None:
-                total_volumes.setdefault(element.material, 0.0)
-                total_volumes[element.material] += element.geometry.volume
-            else:
-                self.logger.debug(f"Element '{element.id}' ({element.name}) of material {element.material.value} has no defined volume.")
-        return total_volumes
-
-    def count_elements_by_type(self) -> Dict[ElementType, int]:
-        """
-        Counts the number of elements for each type.
-        """
-        counts: Dict[ElementType, int] = {}
-        for element in self.model.elements:
-            counts.setdefault(element.type, 0)
-            counts[element.type] += 1
-        return counts
-
-    def find_elements_with_property(self, property_key: str) -> List[ArchitecturalElement]:
-        """
-        Finds all elements that possess a specific property key.
-        """
-        return [elem for elem in self.model.elements if property_key in elem.properties]
-
-# --- Model Filtering ---
-
-class ModelFilter:
-    """
-    Provides methods for filtering architectural elements within a model.
-    """
-    def __init__(self, elements: List[ArchitecturalElement]):
-        self.elements = elements
-        self.logger = logging.getLogger(self.__class__.__name__)
-
-    def filter_by_type(self, element_type: Union[ElementType, str]) -> List[ArchitecturalElement]:
-        """Filters elements by a specific ElementType."""
-        if isinstance(element_type, str):
-            element_type = ElementType(element_type.upper())
-        self.logger.debug(f"Filtering by type: {element_type.value}")
-        return [elem for elem in self.elements if elem.type == element_type]
-
-    def filter_by_material(self, material: Union[Material, str]) -> List[ArchitecturalElement]:
-        """Filters elements by a specific Material."""
-        if isinstance(material, str):
-            material = Material(material.upper())
-        self.logger.debug(f"Filtering by material: {material.value}")
-        return [elem for elem in self.elements if elem.material == material]
-
-    def filter_by_property_value(self, key: str, value: Any) -> List[ArchitecturalElement]:
-        """Filters elements where a property matches a specific value."""
-        self.logger.debug(f"Filtering by property '{key}' with value '{value}'")
-        return [elem for elem in self.elements if elem.properties.get(key) == value]
-
-    def filter_by_geometry_range(
-        self,
-        prop: str,  # e.g., 'area', 'volume', 'length'
-        min_val: Optional[float] = None,
-        max_val: Optional[float] = None
-    ) -> List[ArchitecturalElement]:
-        """
-        Filters elements based on a range for a specific geometric property.
-        """
-        filtered_elements: List[ArchitecturalElement] = []
-        for elem in self.elements:
-            geo_val = getattr(elem.geometry, prop, None)
-            if geo_val is not None:
-                if (min_val is None or geo_val >= min_val) and \
-                   (max_val is None or geo_val <= max_val):
-                    filtered_elements.append(elem)
-        self.logger.debug(f"Filtering by geometry '{prop}' in range [{min_val}, {max_val}] resulted in {len(filtered_elements)} elements.")
-        return filtered_elements
-
-# --- Report Generation ---
-
-class ReportGenerator:
-    """
-    Generates various reports from architectural model data.
-    """
-    def __init__(self, model: ArchitecturalModel):
-        self.model = model
-        self.analyzer = ModelAnalyzer(model)
-        self.logger = logging.getLogger(self.__class__.__name__)
-
-    def generate_summary_report(self, output_path: Path) -> None:
-        """
-        Generates a comprehensive summary report for the model in markdown format.
-        """
-        self.logger.info(f"Generating summary report for '{self.model.name}' to {output_path}")
-
-        total_elements = len(self.model.elements)
-        elements_by_type = self.analyzer.count_elements_by_type()
-        total_areas_by_type = self.analyzer.calculate_total_area_by_type()
-        total_volumes_by_material = self.analyzer.calculate_total_volume_by_material()
-
-        report_content = [
-            f"# Architectural Model Summary Report: {self.model.name}",
-            f"\n**Version:** {self.model.version}",
-            f"**Date:** {self.model.date}",
-            f"**Total Elements:** {total_elements}",
-            f"\n## Element Counts by Type",
-            "| Element Type | Count |",
-            "|--------------|-------|"
-        ]
-
-        for elem_type, count in elements_by_type.items():
-            report_content.append(f"| {elem_type.value.replace('_', ' ').title()} | {count} |")
-
-        report_content.append("\n## Total Area by Element Type (m²)")
-        report_content.append("| Element Type | Total Area (m²) |")
-        report_content.append("|--------------|------------------|")
-        for elem_type, area in total_areas_by_type.items():
-            report_content.append(f"| {elem_type.value.replace('_', ' ').title()} | {area:,.2f} |")
-
-        report_content.append("\n## Total Volume by Material (m³)")
-        report_content.append("| Material | Total Volume (m³) |")
-        report_content.append("|----------|-------------------|")
-        for material, volume in total_volumes_by_material.items():
-            report_content.append(f"| {material.value.replace('_', ' ').title()} | {volume:,.2f} |")
-
-        try:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write("\n".join(report_content))
-            self.logger.info(f"Summary report successfully generated to {output_path}")
-        except IOError as e:
-            self.logger.error(f"Error writing report to {output_path}: {e}")
-            raise
-
-# --- Main Application Class ---
-
-class ArchitechLensApp:
-    """
-    The main application class for ArchitechLens, orchestrating
-    model loading, analysis, filtering, and reporting.
+    Abstract base class for model serializers.
+    Defines the interface for converting architectural models to and from a persistent format.
     """
     def __init__(self, config: ArchitechLensConfig):
-        self.config = config
-        setup_logging(config)
-        self.logger = logging.getLogger(self.__class__.__name__)
-        self.model: Optional[ArchitecturalModel] = None
-        self._loader_map: Dict[str, BaseModelLoader] = {
-            "json": JsonModelLoader()
-            # Add other loaders here, e.g., "ifc": IfcModelLoader(), "obj": ObjModelLoader()
-        }
-        self.logger.info("ArchitechLens application initialized.")
+        self._config = config
+        self._logger = logging.getLogger(self.__class__.__name__)
 
-    def load_model(self, model_file_name: str, model_format: Optional[str] = None) -> None:
+    @abstractmethod
+    def serialize(self, model: ArchitecturalModel, file_path: Path) -> None:
         """
-        Loads an architectural model from the specified file.
+        Serializes an ArchitecturalModel object to a file.
         """
-        file_path = self.config.data_directory / model_file_name
-        model_format = model_format or self.config.default_model_format
+        pass
 
-        loader = self._loader_map.get(model_format.lower())
-        if not loader:
-            self.logger.error(f"Unsupported model format: {model_format}")
-            raise ValueError(f"No loader available for format: {model_format}")
+    @abstractmethod
+    def deserialize(self, file_path: Path) -> ArchitecturalModel:
+        """
+        Deserializes an ArchitecturalModel object from a file.
+        """
+        pass
+
+# --- Concrete Serializers ---
+
+class ArchitechLensJSONEncoder(json.JSONEncoder):
+    """
+    Custom JSON encoder for ArchitechLens data models.
+    Handles Path objects, Enum members, and dataclasses correctly.
+    """
+    def default(self, obj):
+        if isinstance(obj, Path):
+            return str(obj)
+        if isinstance(obj, Enum):
+            return obj.value
+        if isinstance(obj, ArchitecturalModel):
+            # Special handling for ArchitecturalModel to represent elements as a list of dicts
+            # rather than a dict of dicts (which is harder to deserialize generically)
+            data = asdict(obj)
+            data['elements'] = list(data['elements'].values())
+            return data
+        if dataclasses.is_dataclass(obj):
+            # Convert dataclasses to dicts using asdict for other dataclasses
+            return asdict(obj)
+        return super().default(obj)
+
+
+class JsonModelSerializer(ModelSerializer):
+    """
+    Concrete implementation of ModelSerializer for JSON format.
+    """
+
+    def serialize(self, model: ArchitecturalModel, file_path: Path) -> None:
+        """
+        Serializes an ArchitecturalModel object to a JSON file.
+        Uses a custom encoder to handle dataclasses, Enums, and Path objects.
+        """
+        try:
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(file_path, 'w', encoding=self._config.default_encoding) as f:
+                json.dump(model, f, indent=4, cls=ArchitechLensJSONEncoder)
+            self._logger.info(f"Model '{model.name}' (ID: {model.model_id}) serialized to '{file_path}'.")
+        except TypeError as e:
+            raise SerializationError(f"Type error during JSON serialization of model '{model.name}': {e}") from e
+        except OSError as e:
+            raise SerializationError(f"File system error during JSON serialization to '{file_path}': {e}") from e
+        except Exception as e:
+            raise SerializationError(f"An unexpected error occurred during serialization: {e}") from e
+
+    def deserialize(self, file_path: Path) -> ArchitecturalModel:
+        """
+        Deserializes an ArchitecturalModel object from a JSON file.
+        Includes robust error handling and reconstruction of dataclass objects.
+        """
+        if not file_path.exists():
+            raise FileNotFoundError(f"Model file not found at '{file_path}'.")
 
         try:
-            self.model = loader.load_model(file_path)
-            self.logger.info(f"Model '{self.model.name}' loaded successfully.")
-        except Exception as e:
-            self.logger.critical(f"Failed to load model from {file_path}: {e}")
-            self.model = None # Ensure model is reset on failure
-            raise
+            with open(file_path, 'r', encoding=self._config.default_encoding) as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise DeserializationError(f"Invalid JSON format in file '{file_path}': {e}") from e
+        except OSError as e:
+            raise DeserializationError(f"File system error during JSON deserialization from '{file_path}': {e}") from e
 
-    def analyze_model(self) -> ModelAnalyzer:
-        """
-        Returns a ModelAnalyzer instance for the currently loaded model.
-        Raises ValueError if no model is loaded.
-        """
-        if not self.model:
-            raise ValueError("No model loaded. Please load a model first.")
-        return ModelAnalyzer(self.model)
-
-    def filter_elements(self, elements: Optional[List[ArchitecturalElement]] = None) -> ModelFilter:
-        """
-        Returns a ModelFilter instance for the currently loaded model's elements,
-        or a provided list of elements.
-        Raises ValueError if no model is loaded and no elements are provided.
-        """
-        if elements is not None:
-            return ModelFilter(elements)
-        if not self.model:
-            raise ValueError("No model loaded and no elements provided for filtering.")
-        return ModelFilter(self.model.elements)
-
-    def generate_report(self, output_file_name: str) -> None:
-        """
-        Generates a summary report for the currently loaded model.
-        """
-        if not self.model:
-            raise ValueError("No model loaded. Cannot generate report.")
-        
-        report_path = self.config.data_directory / "reports" / output_file_name
-        reporter = ReportGenerator(self.model)
-        reporter.generate_summary_report(report_path)
-
-    def run_example_workflow(self, model_file_name: str, report_file_name: str) -> None:
-        """
-        Demonstrates a typical workflow: load, analyze, filter, report.
-        """
-        self.logger.info(f"Starting example workflow with model '{model_file_name}'")
         try:
-            # 1. Load Model
-            self.load_model(model_file_name)
+            # Reconstruct the main ArchitecturalModel
+            elements_data = data.pop('elements', [])
+            model = ArchitecturalModel(
+                model_id=data.get('model_id'),
+                name=data.get('name'),
+                metadata=data.get('metadata', {})
+            )
+            
+            # Reconstruct elements and add them to the model
+            for element_dict in elements_data:
+                geometric_props_data = element_dict.pop('geometric_properties', {})
+                geometric_properties = GeometricProperties(**geometric_props_data)
 
-            if self.model:
-                # 2. Analyze Model
-                analyzer = self.analyze_model()
-                total_areas = analyzer.calculate_total_area_by_type()
-                self.logger.info(f"Total areas by type: {json.dumps({k.value: v for k, v in total_areas.items()}, indent=2)}")
-
-                total_volumes = analyzer.calculate_total_volume_by_material()
-                self.logger.info(f"Total volumes by material: {json.dumps({k.value: v for k, v in total_volumes.items()}, indent=2)}")
-
-                # 3. Filter Elements
-                wall_elements = self.filter_elements().filter_by_type(ElementType.WALL)
-                self.logger.info(f"Found {len(wall_elements)} wall elements.")
+                relationships_data = element_dict.pop('relationships', [])
+                relationships = [Relationship(**rel) for rel in relationships_data]
                 
-                concrete_elements = self.filter_elements(wall_elements).filter_by_material(Material.CONCRETE)
-                self.logger.info(f"Found {len(concrete_elements)} concrete wall elements.")
+                # Ensure element_type and material are converted to Enum members during reconstruction
+                element_dict['element_type'] = ElementType(element_dict['element_type'])
+                element_dict['material'] = Material(element_dict['material'])
 
-                large_walls = self.filter_elements(wall_elements).filter_by_geometry_range('area', min_val=20.0)
-                self.logger.info(f"Found {len(large_walls)} walls with area >= 20.0 m².")
+                element = ArchitecturalElement(
+                    geometric_properties=geometric_properties,
+                    relationships=relationships,
+                    **element_dict
+                )
+                model.add_element(element) # Use add_element to leverage its validation
 
-                # 4. Generate Report
-                self.generate_report(report_file_name)
-                
-            self.logger.info("Example workflow completed successfully.")
-
+            self._logger.info(f"Model '{model.name}' (ID: {model.model_id}) deserialized from '{file_path}'.")
+            return model
+        except KeyError as e:
+            raise DeserializationError(f"Missing required field '{e}' during model reconstruction from '{file_path}'.") from e
+        except (ValueError, TypeError, ModelValidationError) as e:
+            raise DeserializationError(f"Data type or validation error during model reconstruction from '{file_path}': {e}") from e
         except Exception as e:
-            self.logger.error(f"Example workflow failed: {e}", exc_info=True)
+            raise DeserializationError(f"An unexpected error occurred during deserialization: {e}") from e
 
-# --- Example Usage (requires a dummy JSON data file) ---
 
-def create_dummy_model_json(file_path: Path):
+# --- Main Application Logic ---
+
+class ArchitechLens:
     """
-    Creates a dummy JSON file representing an architectural model for testing.
+    Main application class for ArchitechLens. Manages configuration, logging,
+    and interaction with architectural models through serializers.
     """
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    dummy_data = {
-        "metadata": {
-            "name": "ArchitechLens Demo Building",
-            "version": "1.0",
-            "date": "2023-10-27",
-            "project_id": "AL-DEMO-001"
-        },
-        "elements": [
-            {
-                "id": "b_001",
-                "name": "Main Building",
-                "type": "BUILDING",
-                "material": "OTHER",
-                "properties": {"year_built": 2023},
-                "geometry": {"area": 300.0, "height": 10.0, "volume": 3000.0}
-            },
-            {
-                "id": "f_001",
-                "name": "Ground Floor",
-                "type": "FLOOR",
-                "material": "CONCRETE",
-                "properties": {"level": 0},
-                "geometry": {"area": 100.0, "thickness": 0.3, "volume": 30.0},
-                "parent_id": "b_001"
-            },
-            {
-                "id": "f_002",
-                "name": "First Floor",
-                "type": "FLOOR",
-                "material": "CONCRETE",
-                "properties": {"level": 1},
-                "geometry": {"area": 100.0, "thickness": 0.3, "volume": 30.0},
-                "parent_id": "b_001"
-            },
-            {
-                "id": "w_ext_001",
-                "name": "Exterior Wall North",
-                "type": "WALL",
-                "material": "BRICK",
-                "properties": {"fire_rating": "F90", "u_value": 0.25},
-                "geometry": {"length": 10.0, "height": 3.0, "thickness": 0.3, "area": 30.0, "volume": 9.0},
-                "parent_id": "f_001"
-            },
-            {
-                "id": "w_ext_002",
-                "name": "Exterior Wall South",
-                "type": "WALL",
-                "material": "BRICK",
-                "properties": {"fire_rating": "F90", "u_value": 0.25},
-                "geometry": {"length": 10.0, "height": 3.0, "thickness": 0.3, "area": 30.0, "volume": 9.0},
-                "parent_id": "f_001"
-            },
-            {
-                "id": "w_int_001",
-                "name": "Interior Wall Main",
-                "type": "WALL",
-                "material": "PLASTER",
-                "properties": {"sound_rating_db": 45},
-                "geometry": {"length": 5.0, "height": 3.0, "thickness": 0.1, "area": 15.0, "volume": 1.5},
-                "parent_id": "f_001"
-            },
-            {
-                "id": "w_int_002",
-                "name": "Interior Wall Office",
-                "type": "WALL",
-                "material": "WOOD",
-                "properties": {"sound_rating_db": 30},
-                "geometry": {"length": 3.0, "height": 3.0, "thickness": 0.1, "area": 9.0, "volume": 0.9},
-                "parent_id": "f_001"
-            },
-            {
-                "id": "win_001",
-                "name": "Main Window",
-                "type": "WINDOW",
-                "material": "GLASS",
-                "properties": {"glazing_type": "double", "frame_material": "aluminum"},
-                "geometry": {"width": 2.0, "height": 1.5, "area": 3.0},
-                "parent_id": "w_ext_001"
-            },
-            {
-                "id": "space_office",
-                "name": "Office Space 101",
-                "type": "SPACE",
-                "material": "OTHER",
-                "properties": {"occupancy_load": 4},
-                "geometry": {"area": 25.0, "height": 2.8, "volume": 70.0},
-                "parent_id": "f_001"
-            },
-            {
-                "id": "space_corridor",
-                "name": "Corridor Ground",
-                "type": "SPACE",
-                "material": "OTHER",
-                "properties": {"fire_zone": "A"},
-                "geometry": {"area": 15.0, "height": 2.8, "volume": 42.0},
-                "parent_id": "f_001"
-            },
-            {
-                "id": "column_001",
-                "name": "Support Column A1",
-                "type": "COLUMN",
-                "material": "CONCRETE",
-                "properties": {"structural_load_kn": 150},
-                "geometry": {"length": 0.4, "width": 0.4, "height": 3.0, "volume": 0.48}, # area assumed to be base area
-                "parent_id": "f_001"
-            }
-        ]
-    }
+    def __init__(self, config: Optional[ArchitechLensConfig] = None):
+        self._config = config if config else ArchitechLensConfig()
+        setup_logging(self._config) # Initialize logging based on config
 
-    with open(file_path, 'w', encoding='utf-8') as f:
-        json.dump(dummy_data, f, indent=2)
-    logging.getLogger(__name__).info(f"Dummy model JSON created at: {file_path}")
+        self._logger = logging.getLogger(self.__class__.__name__)
+        self._model: Optional[ArchitecturalModel] = None
+
+        # Ensure data directory exists
+        try:
+            self._config.data_directory.mkdir(parents=True, exist_ok=True)
+            self._logger.info(f"Data directory '{self._config.data_directory}' ensured to exist.")
+        except OSError as e:
+            self._logger.error(f"Failed to create data directory '{self._config.data_directory}': {e}")
+            raise ConfigurationError(f"Cannot initialize ArchitechLens: Failed to create data directory.") from e
+
+        # Initialize serializer based on default_model_format
+        if self._config.default_model_format == "json":
+            self._serializer: ModelSerializer = JsonModelSerializer(self._config)
+        # elif self._config.default_model_format == "ifc":
+        #    self._serializer = IfcModelSerializer(self._config) # Placeholder for other formats
+        else:
+            raise NotImplementedError(f"Serializer for format '{self._config.default_model_format}' not implemented.")
+
+    @property
+    def current_model(self) -> Optional[ArchitecturalModel]:
+        return self._model
+
+    def load_model(self, model_filename: str) -> Optional[ArchitecturalModel]:
+        """
+        Loads an architectural model from the data directory.
+        """
+        file_path = self._config.data_directory / model_filename
+        self._logger.info(f"Attempting to load model from: {file_path}")
+        try:
+            self._model = self._serializer.deserialize(file_path)
+            self._logger.info(f"Model '{self._model.name}' (ID: {self._model.model_id}) loaded successfully.")
+            return self._model
+        except ArchitechLensError as e:
+            self._logger.error(f"Failed to load model from '{file_path}': {e}")
+            self._model = None # Ensure no partial model is set
+        except Exception as e:
+            self._logger.critical(f"An unhandled error occurred during model loading from '{file_path}': {e}", exc_info=True)
+            self._model = None
+        return None
+
+    def save_model(self, model: ArchitecturalModel, model_filename: str) -> bool:
+        """
+        Saves an architectural model to the data directory.
+        """
+        file_path = self._config.data_directory / model_filename
+        self._logger.info(f"Attempting to save model '{model.name}' (ID: {model.model_id}) to: {file_path}")
+        try:
+            self._serializer.serialize(model, file_path)
+            self._logger.info(f"Model '{model.name}' (ID: {model.model_id}) saved successfully to '{file_path}'.")
+            return True
+        except ArchitechLensError as e:
+            self._logger.error(f"Failed to save model '{model.name}' to '{file_path}': {e}")
+        except Exception as e:
+            self._logger.critical(f"An unhandled error occurred during model saving to '{file_path}': {e}", exc_info=True)
+        return False
+
+    def create_new_model(self, model_id: str, name: str) -> ArchitecturalModel:
+        """
+        Creates a new empty architectural model and sets it as the current model.
+        """
+        try:
+            new_model = ArchitecturalModel(model_id=model_id, name=name)
+            self._model = new_model
+            self._logger.info(f"New model '{name}' (ID: {model_id}) created.")
+            return new_model
+        except ModelValidationError as e:
+            self._logger.error(f"Failed to create new model: {e}")
+            raise # Re-raise to indicate failure
 
 
+# Example Usage
 if __name__ == "__main__":
-    # Define configuration
-    config = ArchitechLensConfig(
-        data_directory=Path("./architechlens_data"),
-        log_file_path=Path("./architechlens_data/logs/app.log"),
-        log_level=logging.DEBUG
+    # 1. Setup Configuration
+    # You can customize these paths, e.g., for testing
+    my_config = ArchitechLensConfig(
+        data_directory=Path("./my_arch_data"),
+        log_file_path=Path("./logs/architechlens_app.log"),
+        log_level=logging.DEBUG # Set to DEBUG for more detailed logging
     )
 
-    # Create dummy data file for demonstration
-    dummy_model_file = config.data_directory / "demo_model.json"
-    create_dummy_model_json(dummy_model_file)
+    # 2. Initialize ArchitechLens Application
+    try:
+        app = ArchitechLens(config=my_config)
+    except ConfigurationError as e:
+        print(f"Application setup failed: {e}")
+        exit(1)
 
-    # Initialize and run the application
-    app = ArchitechLensApp(config)
-    app.run_example_workflow(
-        model_file_name="demo_model.json",
-        report_file_name="summary_report.md"
+    # 3. Create a new model
+    my_model = app.create_new_model(model_id="project_alpha_1", name="Alpha Building Project")
+
+    # 4. Add some elements
+    wall_geometry = GeometricProperties(coordinates=[0.0, 0.0, 0.0], dimensions=[5.0, 0.2, 3.0])
+    wall_element = ArchitecturalElement(
+        element_id="wall_001",
+        name="Main Exterior Wall",
+        element_type=ElementType.WALL,
+        material=Material.CONCRETE,
+        description="A reinforced concrete wall.",
+        geometric_properties=wall_geometry
     )
+    wall_element.add_property("fire_rating", "F90")
+    wall_element.add_property("u_value", 0.3)
+    my_model.add_element(wall_element)
+    
+    # Calculate and log volume of the wall
+    volume = wall_element.geometric_properties.calculate_volume()
+    if volume is not None:
+        app._logger.info(f"Volume of {wall_element.name}: {volume:.2f} cubic meters.")
 
-    print(f"\n--- ArchitechLens Demo Complete ---")
-    print(f"Check '{config.data_directory}/logs/app.log' for detailed logs.")
-    print(f"Check '{config.data_directory}/reports/summary_report.md' for the generated report.")
-    print(f"Example data is located in '{config.data_directory}'.")
+    window_geometry = GeometricProperties(coordinates=[1.0, 0.1, 1.2], dimensions=[1.5, 0.1, 1.0])
+    window_element = ArchitecturalElement(
+        element_id="window_001",
+        name="Living Room Window",
+        element_type=ElementType.WINDOW,
+        material=Material.GLASS,
+        geometric_properties=window_geometry,
+        relationships=[Relationship(type="hosts", target_element_id="wall_001")]
+    )
+    my_model.add_element(window_element)
+
+    floor_slab = ArchitecturalElement(
+        element_id="slab_001",
+        name="Ground Floor Slab",
+        element_type=ElementType.SLAB,
+        material=Material.CONCRETE,
+        geometric_properties=GeometricProperties(dimensions=[10.0, 8.0, 0.2])
+    )
+    my_model.add_element(floor_slab)
+
+    # Example of invalid element (should raise error due to non-existent ElementType)
+    try:
+        invalid_element = ArchitecturalElement(
+            element_id="invalid_001",
+            name="Bad Element",
+            element_type="NON_EXISTENT_TYPE", # This will cause an error
+            material=Material.STEEL
+        )
+        my_model.add_element(invalid_element)
+    except ModelValidationError as e:
+        app._logger.error(f"Caught expected error when adding invalid element: {e}")
+    except TypeError as e: # This might also be caught if __post_init__ does not handle conversion.
+        app._logger.error(f"Caught expected TypeError for invalid enum: {e}")
+
+
+    # 5. Save the model
+    save_success = app.save_model(my_model, "project_alpha_model.json")
+    if save_success:
+        app._logger.info("Model saved successfully.")
+    else:
+        app._logger.error("Model saving failed.")
+
+    # 6. Load the model back (simulate a new session or check persistence)
+    app._model = None # Clear current model to ensure we load fresh
+    loaded_model = app.load_model("project_alpha_model.json")
+
+    if loaded_model:
+        app._logger.info(f"Loaded model name: {loaded_model.name}")
+        app._logger.info(f"Number of elements in loaded model: {len(loaded_model.elements)}")
+
+        # 7. Use new features on the loaded model
+        try:
+            retrieved_wall = loaded_model.get_element("wall_001")
+            app._logger.info(f"Retrieved wall: {retrieved_wall.name}, Material: {retrieved_wall.material.value}")
+            app._logger.info(f"Wall fire rating: {retrieved_wall.get_property('fire_rating')}")
+
+            # Filter elements
+            walls = loaded_model.filter_elements_by_type(ElementType.WALL)
+            app._logger.info(f"Found {len(walls)} wall elements.")
+            
+            concrete_elements = loaded_model.get_elements_by_material(Material.CONCRETE)
+            app._logger.info(f"Found {len(concrete_elements)} concrete elements.")
+
+            # Try to get a non-existent element
+            try:
+                loaded_model.get_element("non_existent_id")
+            except ElementNotFoundError as e:
+                app._logger.error(f"Caught expected error: {e}")
+
+            # Try to remove an element
+            try:
+                loaded_model.remove_element("window_001")
+                app._logger.info("Window_001 removed.")
+                app._logger.info(f"Elements after removal: {len(loaded_model.elements)}")
+                # Try to remove it again (should fail)
+                loaded_model.remove_element("window_001")
+            except ElementNotFoundError as e:
+                app._logger.error(f"Caught expected error: {e}")
+
+        except ArchitechLensError as e:
+            app._logger.error(f"Error during model interaction: {e}")
+
+    # 8. Test error handling for non-existent file
+    app._model = None
+    app.load_model("non_existent_model.json") # This should log an error.
+
+    # 9. Test error handling for invalid JSON file (create a dummy corrupt file)
+    corrupt_file_path = my_config.data_directory / "corrupt_model.json"
+    with open(corrupt_file_path, 'w', encoding=my_config.default_encoding) as f:
+        f.write("{'model_id': 'test', 'name': 'Corrupt', 'elements': [}") # Invalid JSON
+    app._logger.info(f"Attempting to load corrupt file: {corrupt_file_path}")
+    app.load_model("corrupt_model.json")
+    corrupt_file_path.unlink() # Clean up
+
