@@ -1,99 +1,121 @@
-![Banner](https://image.pollinations.ai/prompt/minimalist%20tech%20banner%20for%20software%20project%20ArchitechLens%20Ein%20Python-Tool,%20das%20Code-Basen%20kontextuell%20analysiert,%20um%20proaktiv%20architektonische%20Verbesserungen,%20Performance-Optimierungen%20und%20die%20Generierung%20passender%20Boilerplate-%20oder%20Test-Code-Vorschläge%20zu%20liefern,%20basierend%20auf%20Projektmustern%20und%20Best%20Practices.%20dark%20mode%20futuristic%20cyber?width=800&height=300&nologo=true&seed=6974)
-
-[![Python](https://img.shields.io/badge/Python-3.9%2B-blue?style=flat&logo=python&logoColor=white)](https://www.python.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-v1.0.0-informational)](https://github.com/YourOrg/ArchitechLens/releases)
-
-# ArchitechLens
-
-*   **Intelligente Code-Analyse:** Kontextuelle Tiefenanalyse von Code-Basen.
-*   **Proaktive Optimierung:** Identifikation und Vorschlag architektonischer und Performance-Verbesserungen.
-*   **Automatisierte Code-Generierung:** Erstellung von Boilerplate- und Test-Code basierend auf Projektmustern und Best Practices.
+![Banner](https://image.pollinations.ai/prompt/minimalist%20tech%20banner%20for%20software%20project%20ArchitechLens%20Ein%20Python-Tool,%20das%20Code-Basen%20kontextuell%20analysiert,%20um%20proaktiv%20architektonische%20Verbesserungen,%20Performance-Optimierungen%20und%20die%20Generierung%20passender%20Boilerplate-%20oder%20Test-Code-Vorschläge%20zu%20liefern,%20basierend%20auf%20Projektmustern%20und%20Best%20Practices.%20dark%20mode%20futuristic%20cyber?width=800&height=300&nologo=true&seed=9436)
 
 ---
 
-## Über ArchitechLens
+[![Python Version](https://img.shields.io/badge/Python-3.8%2B-blue?style=flat-square&logo=python)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-0.1.0-green?style=flat-square)](CHANGELOG.md)
 
-*   **Zweck:** Ein fortschrittliches Python-Tool zur Steigerung der Code-Qualität und Entwicklungseffizienz.
-*   **Methodik:** Nutzt kontextuelles Verständnis der Code-Basis.
-*   **Ergebnis:** Liefert präzise, umsetzbare Empfehlungen und Code-Vorschläge.
-*   **Grundlage:** Basierend auf etablierten Projektmustern und Industriestandards.
+# ArchitechLens
 
-## Kernfunktionen
+## 💡 Übersicht
 
-| Funktion                       | Beschreibung                                                                                              |
-| :----------------------------- | :-------------------------------------------------------------------------------------------------------- |
-| **Kontextuelle Code-Analyse**  | Tiefgehende Untersuchung der Codebasis, Erkennung von Abhängigkeiten, Mustern und Anti-Mustern.           |
-| **Architektonische Empfehlungen** | Vorschläge zur Verbesserung der Systemstruktur, Modularität und Skalierbarkeit.                         |
-| **Performance-Optimierungen**  | Identifikation von Engpässen, Generierung von Code-Optimierungen für schnellere Ausführung.               |
-| **Boilerplate-Code-Generierung** | Automatische Erstellung wiederkehrender Code-Strukturen und Komponenten nach Projektkonventionen.          |
-| **Test-Code-Vorschläge**       | Generierung von unit- und Integrationstestfällen zur Sicherstellung der Codequalität und -abdeckung.       |
-| **Best Practices Integration** | Konsistente Anwendung etablierter Industriestandstandards, Design-Prinzipien und Sicherheitsaspekte.      |
+*   **Intelligente Code-Analyse:** Python-Tool zur kontextuellen Bewertung von Codebasen.
+*   **Proaktive Vorschläge:** Automatische Identifikation von Optimierungspotenzialen.
+*   **Architekturelle Verbesserungen:** Empfehlungen zur Struktur und Design-Patterns.
+*   **Performance-Optimierung:** Konkrete Hinweise zur Leistungssteigerung.
+*   **Code-Generierung:** Erstellung von Boilerplate- und Test-Code-Vorschlägen.
+*   **Musterbasiert:** Berücksichtigung von Projektmustern und Best Practices.
 
-## Funktionsweise
+## ✨ Features
+
+| Feature                   | Beschreibung                                                           |
+| :------------------------ | :--------------------------------------------------------------------- |
+| **Kontextuelle Analyse**  | Tiefgehende Untersuchung von Code-Struktur, Abhängigkeiten und Logik.  |
+| **Architekturelle Guidance** | Identifikation von Anti-Patterns und Empfehlungen für Design-Upgrades. |
+| **Performance-Analysen**  | Erkennung von Engpässen und Vorschläge für effizientere Implementierungen. |
+| **Code-Vorschläge**       | Generierung von strukturiertem Boilerplate-Code und funktionalen Test-Suites. |
+| **Best Practice Engine**  | Integration von Industriestandards und bewährten Software-Prinzipien. |
+| **Anpassbarkeit**         | Konfiguration von Regeln und Mustern zur spezifischen Projektanpassung. |
+
+## 🚀 Wie es funktioniert
+
+ArchitechLens verarbeitet Ihre Codebasis in mehreren Schritten, um wertvolle Erkenntnisse und Vorschläge zu liefern.
 
 mermaid
 graph LR
-    A[Start: Codebase-Input] --> B{Kontextuelle Analyse<br/>`AST Parsing, Datenfluss, Abhängigkeiten`};
-    B --> C{Mustererkennung & Best Practices<br/>`Projektmuster, Clean Code, Designprinzipien`};
-    C --> D{Vorschlagsgenerierung};
-    D --> D1[Architektonische Verbesserungen<br/>`Refactoring, Modul-Trennung`];
-    D --> D2[Performance-Optimierungen<br/>`Algorithmus-Anpassungen, Caching`];
-    D --> D3[Boilerplate- & Test-Code<br/>`Standard-Strukturen, Testfälle`];
-    D1 & D2 & D3 --> E[Ende: Detaillierte Empfehlungen & Code-Vorschläge];
+    A[Codebase Input] --> B(Statische & Dynamische Analyse);
+    B --> C{Kontextuelle Mustererkennung};
+    C --> D(Regelbasierte Bewertung);
+    D --> E[Architekturelle Empfehlungen];
+    D --> F[Performance-Optimierungsvorschläge];
+    D --> G[Generierung von Boilerplate- & Test-Code];
 
 
-## Installation
+*   **Input:** Übernahme der zu analysierenden Codebasis.
+*   **Analyse:** Kombination aus statischer und optional dynamischer Code-Analyse.
+*   **Mustererkennung:** Abgleich mit bekannten Projektmustern und Best Practices.
+*   **Bewertung:** Anwendung konfigurierter Regeln und Heuristiken.
+*   **Output:** Detaillierte Berichte und direkt anwendbare Code-Vorschläge.
 
-*   **Voraussetzungen:** Python 3.9 oder höher.
-*   **Repository klonen:**
+## 🛠️ Installation
+
+### Voraussetzungen
+
+*   Python 3.8+
+*   `pip` (Python-Paketmanager)
+
+### Schritte
+
+1.  **Repository klonen:**
     bash
-    git clone https://github.com/YourOrg/ArchitechLens.git
-    cd ArchitechLens
+    git clone https://github.com/your-org/architechlens.git
+    cd architechlens
     
-*   **Virtuelle Umgebung erstellen:**
-    bash
-    python -m venv venv
-    source venv/bin/activate  # macOS/Linux
-    # oder
-    .\venv\Scripts\activate   # Windows
-    
-*   **Abhängigkeiten installieren:**
+2.  **Abhängigkeiten installieren:**
     bash
     pip install -r requirements.txt
     
-
-## Nutzung
-
-*   **Analyse einer Codebasis starten:**
+3.  **(Optional) Als globales Tool installieren:**
     bash
-    python -m architechlens analyze <Pfad_zur_Codebasis>
-    
-*   **Spezifische Empfehlungen generieren (Beispiel):**
-    bash
-    python -m architechlens suggest-boilerplate <Modulname>
-    python -m architechlens optimize-performance <Funktionspfad>
-    
-*   **Detaillierte Hilfe abrufen:**
-    bash
-    python -m architechlens --help
+    pip install .
     
 
-## Beitrag leisten
+## 📖 Nutzung
 
-*   **Open Source:** Beiträge sind herzlich willkommen.
-*   **Forken Sie das Repository:** Erstellen Sie einen eigenen Fork.
-*   **Feature-Branch:** Entwickeln Sie auf einem dedizierten Branch.
-*   **Pull Request:** Reichen Sie Ihre Änderungen über einen Pull Request ein.
-*   **Richtlinien:** Bitte beachten Sie unsere Code-of-Conduct und Contributing-Guidelines.
+### Analyse einer Codebasis
 
-## Lizenz
+bash
+python -m architechlens analyse <Pfad_zum_Projektverzeichnis>
 
-*   Dieses Projekt ist unter der MIT-Lizenz lizenziert.
-*   Details siehe `LICENSE`-Datei.
 
-## Kontakt
+*   **Beispiel:** `python -m architechlens analyse ./my_python_app`
+*   **Optionen:** `--output-format <json|html|console>`, `--config <Pfad_zur_Config>`
 
-*   **Maintainer:** [Ihr Name / Organisation](https://github.com/YourOrg)
-*   **E-Mail:** `support@yourorg.com`
-*   **Issues:** [GitHub Issues](https://github.com/YourOrg/ArchitechLens/issues)
+### Code-Generierung
+
+bash
+python -m architechlens generate --type <boilerplate|test> --pattern <Mustername> --output <Ausgabe_Pfad>
+
+
+*   **Beispiel (Boilerplate):** `python -m architechlens generate --type boilerplate --pattern REST_API_Controller --output ./src/controllers`
+*   **Beispiel (Test):** `python -m architechlens generate --type test --target-file ./src/utils.py --output ./tests`
+
+### Hilfe und weitere Befehle
+
+bash
+python -m architechlens --help
+python -m architechlens <befehl> --help
+
+
+## ⚙️ Konfiguration
+
+*   **Globale Einstellungen:** Anpassung über `architechlens.config.yaml` im Projektstamm.
+*   **Regelwerke:** Definition eigener Regeln und Schwellenwerte für Analysen.
+*   **Muster-Definitionen:** Erweiterung der Boilerplate- und Test-Code-Generierung.
+
+## 🤝 Mitwirken
+
+Wir freuen uns über Beiträge!
+
+*   **Issues:** Melden Sie Fehler oder schlagen Sie neue Features vor.
+*   **Pull Requests:** Reichen Sie Code-Verbesserungen ein.
+*   Bitte beachten Sie unseren [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## 📄 Lizenz
+
+ArchitechLens wird unter der [MIT-Lizenz](LICENSE) veröffentlicht.
+
+## 📧 Kontakt
+
+Bei Fragen, Anregungen oder Unterstützung kontaktieren Sie uns unter: `support@architechlens.dev`
